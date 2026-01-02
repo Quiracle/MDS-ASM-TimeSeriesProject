@@ -1,0 +1,134 @@
+---
+title: "FinalProject"
+author: "Nour El Hamidi, Jonàs Salat Torres"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exploratory data analysis and transformation into stationarity
+
+```{r}
+serie=ts((read.table("eurodol.dat")),start=1995,freq=12)
+```
+
+```{r}
+plot(serie)
+abline(v=1995:2020,col=4,lty=3)
+```
+There are trends, as the mean is not constant. This is not stationary.
+
+### Is variance constant?
+
+```{r}
+boxplot(serie~floor(time(serie)))
+```
+All boxes should have the same height for variance to be constant, so it's not.
+
+```{r}
+m<-apply(matrix(serie,nrow=12),2,mean)
+v<-apply(matrix(serie,nrow=12),2,var)
+plot(v~m)
+abline(lm(v~m),col=2,lty=3)
+text(m, v, 1995:2020)
+```
+There is also an upwards trend for the mean variance plot. The variance is higher for higher values of the mean, so we apply log transformation.
+
+```{r}
+lnserie=log(serie)
+monthplot(lnserie)
+```
+Monthplot indicates seasonality.
+```{r}
+m<-apply(matrix(lnserie,nrow=12),2,mean)
+v<-apply(matrix(lnserie,nrow=12),2,var)
+plot(v~m)
+abline(lm(v~m),col=2,lty=3)
+text(m, v, 1995:2020)
+```
+The line is now almost flat.
+
+```{r}
+ts.plot(matrix(lnserie,nrow=12),col=1:8)
+```
+This plot doesn't indicate seasonality but since we saw there is with the monthplot, we will apply a differentiation of 12.
+### Is the mean constant?
+
+There is no linear trend, but the mean is still not constant. There are long periods where the values stay above or below a level.
+```{r}
+d12lnserie=diff(lnserie, lag=12)
+plot(d12lnserie)
+abline(h=0)
+abline(h=mean(d12lnserie),col=2)
+```
+
+```{r}
+monthplot(d12lnserie)
+```
+```{r}
+ts.plot(matrix(d12lnserie,nrow=12),col=1:8)
+```
+
+There is no seasonality now.
+
+
+```{r}
+mean(d12lnserie)
+```
+The mean is almost 0. To check if it's constant, we will keep applying differentiations until the variance increases and keep the previous iteration.
+
+```{r}
+d1d12lnserie=diff(d12lnserie)
+plot(d1d12lnserie)
+abline(h=0)
+abline(h=mean(d1d12lnserie),col=2)
+```
+```{r}
+var(lnserie)
+```
+```{r}
+var(d12lnserie)
+```
+```{r}
+var(d1d12lnserie)
+```
+The variance is still decreasing.
+
+```{r}
+d1d1d12lnserie=diff(d1d12lnserie)
+plot(d1d1d12lnserie)
+abline(h=0)
+abline(h=mean(d1d1d12lnserie),col=2)
+```
+```{r}
+var(d1d1d12lnserie)
+```
+
+We can see that the variance increases so we will keep with d1d12lnserie as our time series.
+
+### Plot ACF to check stationarity
+```{r}
+par(mar = c(5, 4, 4, 2))
+acf(d1d12lnserie,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)), main ="ACF(serie)")
+```
+We can see that the ACF decreases fast towards 0, so it depends only on the lag. The (1-B)(1-B^12)log(eurodol) is already stationary! It has constant mean and variance.
+
+## ACF and PACF Analysis
+
+```{r}
+par(mfrow=c(1,2))
+acf(d1d12lnserie,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)), main ="ACF(serie)",lwd=2)
+pacf(d1d12lnserie,ylim=c(-1,1),lag.max=60,col=c(rep(1,11),2), main ="PACF(serie)",lwd=2)
+par(mfrow=c(1,2))
+```
+We observe a PACF with a decreasing pattern of exponential form with seasonality 12. While ACF only has one lag different from 0.This behaviour suggests a seasonal MA(1) with s=12. P=1, Q=0
+On the regular part, We se that the ACF only has one lag different from 0 (the first) before the seasonality repeats. The PACF has also only the first value clearly different from 0, but the second one could be considered. 
+Meaning that we could have the models: 
+ARMA(1,0)(0,1)
+ARMA(0,1)(0,1)
+
+
+## Model estimation
