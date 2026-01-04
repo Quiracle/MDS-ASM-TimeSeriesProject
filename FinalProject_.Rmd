@@ -1,0 +1,225 @@
+---
+title: "FinalProject"
+author: "Nour El Hamidi, Jonàs Salat Torres"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Exploratory data analysis and transformation into stationarity
+
+```{r}
+serie=ts((read.table("eurodol.dat")),start=1995,freq=12)
+```
+
+```{r}
+plot(serie)
+abline(v=1995:2020,col=4,lty=3)
+```
+There are trends, as the mean is not constant. This is not stationary.
+
+### Is variance constant?
+
+```{r}
+boxplot(serie~floor(time(serie)))
+```
+All boxes should have the same height for variance to be constant, so it's not.
+
+```{r}
+m<-apply(matrix(serie,nrow=12),2,mean)
+v<-apply(matrix(serie,nrow=12),2,var)
+plot(v~m)
+abline(lm(v~m),col=2,lty=3)
+text(m, v, 1995:2020)
+```
+There is also an upwards trend for the mean variance plot. The variance is higher for higher values of the mean, so we apply log transformation in order to stabilize the variance.
+
+### Log-transformed series
+
+```{r}
+lnserie=log(serie)
+plot(lnserie)
+```
+#### Seasonal inspection
+
+```{r}
+monthplot(lnserie)
+```
+
+The monthplot suggests mild seasonal fluctuations.
+
+```{r}
+ts.plot(matrix(lnserie,nrow=12),col=1:8)
+```
+However, the seasonal matrix plot does not show a stable seasonal pattern across years.
+Unlike the example shown in the course, the seasonal matrix plot does not reveal a stable and repeating seasonal pattern across years. The curves are not parallel and no common peak or trough is observed.
+Therefore, seasonality appears weak and no seasonal differencing is applied.
+
+### Stationarity of the mean
+
+```{r}
+par(mfrow = c(1,2))
+
+acf(lnserie,
+    lag.max = 60,
+    main = "ACF of log(EUR/USD)")
+
+pacf(lnserie,
+     lag.max = 60,
+     main = "PACF of log(EUR/USD)")
+
+par(mfrow = c(1,1))
+
+```
+The ACF of the log-transformed series declines slowly over many lags, which indicates non-stationarity in the mean. 
+Moreover, no significant peaks are observed at seasonal lags(corresponding to 12, 24 or 36 months), suggesting the absence of a seasonal component.
+The PACF shows a strong spike at lag 1 followed by mostly insignificant values, which, together with the slowly decaying ACF, is consistent with a non-stationary process in the mean.
+
+Therefore, a regular difference is applied.
+
+It is worth noting that the transformation $(1-B) log(X_t)$ corresponds to a log-return transformation. Indeed, 
+$$
+log(X_t) - log(X_{t-1}) = log(1 + \frac{X_t - X_{t-1}}{X_{t-1}})
+$$ 
+and using a first order Taylor expansion, this quantity is approximately equal to 
+$$
+\frac{X_t - X_{t-1}}{X_{t-1}}
+$$
+Therefore, working with a differenced log-series is equivalent to modeling log-returns, which is standard for financial time series.
+
+### Regular differencing
+```{r}
+dlnserie <- diff(lnserie)
+
+plot(dlnserie)
+abline(h = 0)
+abline(h = mean(dlnserie), col = 2)
+```
+
+```{r}
+acf(dlnserie,
+lag.max = 60,
+main = "ACF of differenced log series")
+```
+
+
+```{r}
+pacf(dlnserie,
+lag.max = 60,
+main = "PACF of differenced log series")
+```
+
+After one regular difference, the series fluctuates around a constant mean.
+The ACF cuts off rapidly, indicating that stationarity in the mean has been achieved.
+The PACF displays only a small number of significant initial lags followed by values close to zero, which is consistent with a stationary process.
+
+
+### Variance checking 
+```{r}
+og_var <- var(serie)
+log_var <- var(lnserie)
+dln_var <- var(dlnserie)
+
+og_var 
+log_var
+dln_var
+```
+The variance of the original series is higher than the variance of the log-transformed series, indicating that the logarithmic transformation stabilizes the variance. After regular differencing, the variance remains stable, confirming that no further variance-stabilizing transformation is required.
+
+# Model identification
+
+The identification of the ARIMA model is based on the ACF and PACF of the stationary series $dln(Xt)$. So $$ X_t \sim \text{ARIMA}(p, 1, q) $$
+
+The ACF shows a significant spike at lag 1 followed by values close to zero, while the PACF also presents a significant lag at 1.This suggests that low-order AR and MA components may be present. Consequently, ARIMA(1,1,0) and ARIMA(0,1,1) are considered as plausible candidate models. In addition, an ARIMA(1,1,1) model is also examined to account for possible mixed dynamics.
+
+### Model estimation
+```{r}
+m1 <- arima(lnserie, order = c(1,1,0))
+m2 <- arima(lnserie, order = c(0,1,1))
+m3 <- arima(lnserie, order = c(1,1,1))
+
+m1
+m2
+m3
+```
+```{r}
+coeftest <- function(model){
+  tstat <- model$coef / sqrt(diag(model$var.coef))
+  cbind(Estimate = model$coef,
+        "t value" = tstat,
+        Significant = abs(tstat) > 2)
+}
+
+coeftest(m1)
+coeftest(m2)
+coeftest(m3)
+```
+
+Three candidate models were estimated: 
+  - ARIMA(1,1,0), 
+  - ARIMA(0,1,1),
+  - ARIMA(1,1,1). 
+
+In the ARIMA(1,1,0) model, the autoregressive parameter is significant, but the model exhibits a higher AIC than the alternatives.
+
+The ARIMA(1,1,1) model shows a non-significant autoregressive parameter, suggesting overparameterization.
+
+The ARIMA(0,1,1) model presents a highly significant moving-average coefficient and achieves the lowest AIC among the considered models. 
+
+Thus, ARIMA(0,1,1) is selected as the best model.
+
+# Validation 
+According to the Box–Jenkins methodology, a model is considered appropriate if its residuals behave like white noise. In particular, the residuals should have zero mean, constant variance, follow an approximately normal distribution, and exhibit no autocorrelation. These assumptions are examined using both graphical tools and formal statistical tests.
+
+##Residual Analysis
+
+### 0-mean ?
+```{r}
+best_model <- m2  # ARIMA(0,1,1)
+resid <- residuals(best_model)
+```
+
+```{r}
+par(mfrow = c(1,2))
+
+plot(resid, main = "Residuals")
+abline(h = 0, col = "red")
+
+plot(sqrt(abs(resid)), main = "Sqrt(|Residuals|)")
+
+```
+The residuals fluctuate randomly around zero with no visible change in dispersion over time. This suggests that the variance of the residuals is approximately constant.
+
+### Normality of the Residuals
+```{r}
+par(mfrow = c(1,2))
+
+qqnorm(resid)
+qqline(resid, col = 2)
+
+hist(resid, breaks = 15, freq = FALSE)
+curve(dnorm(x, mean(resid), sd(resid)), col = 2, add = TRUE)
+```
+The Q–Q plot and the histogram indicate that the residuals are reasonably close to a normal distribution.
+
+### Independance of the Residuals
+```{r}
+par(mfrow = c(1,2))
+acf(resid, lag.max = 60)
+pacf(resid, lag.max = 60)
+```
+### Ljung–Box Test
+
+```{r}
+Box.test(resid, lag = 24, type = "Ljung-Box")
+```
+The ACF and PACF of the residuals do not exhibit significant autocorrelations.
+Furthermore, the Ljung–Box test fails to reject the null hypothesis of no autocorrelation, confirming that the residuals behave as white noise.
+
+
+
+
+
