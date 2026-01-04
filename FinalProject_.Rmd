@@ -7,6 +7,7 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(forecast)
 ```
 
 # Exploratory data analysis and transformation into stationarity
@@ -133,17 +134,16 @@ The variance of the original series is higher than the variance of the log-trans
 
 The identification of the ARIMA model is based on the ACF and PACF of the stationary series $dln(Xt)$. So $$ X_t \sim \text{ARIMA}(p, 1, q) $$
 
-The ACF shows a significant spike at lag 1 followed by values close to zero, while the PACF also presents a significant lag at 1.This suggests that low-order AR and MA components may be present. Consequently, ARIMA(1,1,0) and ARIMA(0,1,1) are considered as plausible candidate models. In addition, an ARIMA(1,1,1) model is also examined to account for possible mixed dynamics.
+The ACF shows a significant spike at lag 1 followed by values close to zero, while the PACF also presents a significant lag at 1.This suggests that low-order AR and MA components may be present. Consequently, ARIMA(1,1,0) and ARIMA(0,1,1) are considered as plausible candidate models.
 
 ### Model estimation
 ```{r}
 m1 <- arima(lnserie, order = c(1,1,0))
 m2 <- arima(lnserie, order = c(0,1,1))
-m3 <- arima(lnserie, order = c(1,1,1))
 
 m1
 m2
-m3
+
 ```
 ```{r}
 coeftest <- function(model){
@@ -155,17 +155,13 @@ coeftest <- function(model){
 
 coeftest(m1)
 coeftest(m2)
-coeftest(m3)
 ```
 
 Three candidate models were estimated: 
   - ARIMA(1,1,0), 
-  - ARIMA(0,1,1),
-  - ARIMA(1,1,1). 
+  - ARIMA(0,1,1).
 
 In the ARIMA(1,1,0) model, the autoregressive parameter is significant, but the model exhibits a higher AIC than the alternatives.
-
-The ARIMA(1,1,1) model shows a non-significant autoregressive parameter, suggesting overparameterization.
 
 The ARIMA(0,1,1) model presents a highly significant moving-average coefficient and achieves the lowest AIC among the considered models. 
 
@@ -178,18 +174,14 @@ According to the Box–Jenkins methodology, a model is considered appropriate if
 
 ### 0-mean ?
 ```{r}
-best_model <- m2  # ARIMA(0,1,1)
-resid <- residuals(best_model)
+resid2 <- residuals(m2)
 ```
 
 ```{r}
 par(mfrow = c(1,2))
-
-plot(resid, main = "Residuals")
+plot(resid2, main = "Residuals ARIMA(0, 1, 1)")
 abline(h = 0, col = "red")
-
-plot(sqrt(abs(resid)), main = "Sqrt(|Residuals|)")
-
+plot(sqrt(abs(resid2)), main = "Sqrt(|Residuals|) ARIMA(0, 1, 1)")
 ```
 The residuals fluctuate randomly around zero with no visible change in dispersion over time. This suggests that the variance of the residuals is approximately constant.
 
@@ -197,29 +189,85 @@ The residuals fluctuate randomly around zero with no visible change in dispersio
 ```{r}
 par(mfrow = c(1,2))
 
-qqnorm(resid)
-qqline(resid, col = 2)
+qqnorm(resid2)
+qqline(resid2, col = 2)
 
-hist(resid, breaks = 15, freq = FALSE)
-curve(dnorm(x, mean(resid), sd(resid)), col = 2, add = TRUE)
+hist(resid1, breaks = 15, freq = FALSE)
+curve(dnorm(x, mean(resid2), sd(resid2)), col = 2, add = TRUE)
 ```
 The Q–Q plot and the histogram indicate that the residuals are reasonably close to a normal distribution.
 
 ### Independance of the Residuals
 ```{r}
 par(mfrow = c(1,2))
-acf(resid, lag.max = 60)
-pacf(resid, lag.max = 60)
+acf(resid2, lag.max = 60)
+pacf(resid2, lag.max = 60)
 ```
+Those results were similar for the ARIMA(1, 1, 0) model.
+
 ### Ljung–Box Test
 
 ```{r}
-Box.test(resid, lag = 24, type = "Ljung-Box")
+Box.test(resid2, lag = 24, type = "Ljung-Box")
+
+resid1 <- residuals(m1)
+Box.test(resid1, lag = 24, type = "Ljung-Box")
 ```
 The ACF and PACF of the residuals do not exhibit significant autocorrelations.
 Furthermore, the Ljung–Box test fails to reject the null hypothesis of no autocorrelation, confirming that the residuals behave as white noise.
 
 
+## AR and MA Infinite Representations
+
+### Infinite MA Representation (Casuality)
+For ARIMA(0, 1, 1) :
+$$
+(1-B)X_t = (1+ \theta B) Z_t
+$$
+with $\hat{\theta} = 0.327$.
+Since the estimated moving-average parameter satisfies $|\hat{\theta}| < 1$, the model admits an infinite MA representation. This means that the influence of past innovations decreases over time, ensuring a stable dynamic behavior of the model.
 
 
+### Infinite AR Representation (Invertibility)
+The invertibility condition is satisfied because the estimated MA parameter has modulus smaller than one. Therefore, the model admits an infinite AR representation, allowing the recovery of the innovations from past observations.
 
+
+### Model Adequacy Measures
+```{r}
+AIC(m1)
+BIC(m1)
+
+AIC(m2)
+BIC(m2)
+```
+Model adequacy is assessed using Akaike and Bayesian information criteria. The selected model achieves the lowest AIC among the candidate specifications, indicating a good balance between fit and parsimony.
+
+## Stability and Predictive Capability
+
+The estimated parameters of the ARIMA(0,1,1) model satisfy the causality and invertibility conditions. As a result, the model is stable and suitable for forecasting.
+
+```{r}
+end_train <- time(lnserie)[length(lnserie) - 12]
+start_test <- time(lnserie)[length(lnserie) - 11]
+
+train <- window(lnserie, end = end_train)
+test  <- window(lnserie, start = start_test)
+
+
+model_cv1 <- arima(train, order = c(0,1,1))
+fc_cv1 <- forecast(model_cv1, h = 12)
+
+accuracy(fc_cv1$mean, test)
+```
+```{r}
+model_cv2 <- arima(train, order = c(1,1,0))
+fc_cv2 <- forecast(model_cv2, h = 12)
+
+accuracy(fc_cv2$mean, test)
+```
+
+To assess predictive capability, the last 12 observations were reserved as a validation sample and compared with 12-step-ahead forecasts generated by the ARIMA(0,1,1) model. The mean error (ME) is close to zero, indicating the absence of a strong systematic bias in the forecasts. The root mean squared error (RMSE) and mean absolute error (MAE) are of similar magnitude, suggesting that prediction errors are generally moderate and not driven by a small number of large deviations.
+
+The mean absolute percentage error (MAPE) is relatively high, which is common for financial time series and can be partly explained by the logarithmic differencing, where small denominators may inflate relative error measures. The first-order autocorrelation of the forecast errors (ACF1) is positive, reflecting some short-term dependence in the out-of-sample errors, although this result should be interpreted with caution given the small size of the validation sample.
+
+Finally, Theil’s U statistic exceeds one, indicating that the model does not systematically outperform a naive benchmark over the validation period. This result highlights the inherent difficulty of forecasting exchange rates rather than a deficiency of the model. Overall, the ARIMA(0,1,1) model provides reasonable short-term forecasts, while clearly illustrating the limits of predictability in financial time series.
