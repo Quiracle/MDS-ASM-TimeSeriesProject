@@ -278,3 +278,27 @@ Finally, Theil’s U statistic exceeds one, indicating that the model does not s
 ### Model Selection
 
 Given the small size of the validation sample, these differences should not be over-interpreted. Since ARIMA(0,1,1) provided a better in-sample fit, with a lower AIC and only significant parameters, it is retained as the preferred model according to the principle of parsimony.
+
+
+## Prediction
+
+```{r}
+ultim=c(2018,12)
+pdq=c(0,1,1)
+
+```
+
+
+```{r}
+pred=predict(m2,n.ahead=12)
+pr<-ts(c(tail(lnserie,1),pred$pred),start=ultim+c(1,0),freq=12)
+se<-ts(c(0,pred$se),start=ultim+c(1,0),freq=12)
+
+tl1<-ts(exp(pr-1.96*se),start=ultim+c(1,0),freq=12)
+tu1<-ts(exp(pr+1.96*se),start=ultim+c(1,0),freq=12)
+pr1<-ts(exp(pr),start=ultim+c(1,0),freq=12)
+
+ts.plot(serie,tl1,tu1,pr1,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(ultim[1]-2,ultim[1]+3),type="o",main=paste("Model ARIMA(",paste(pdq,collapse=","),")",sep=""))
+abline(v=(ultim[1]-2):(ultim[1]+3),lty=3,col=4)
+```
+
