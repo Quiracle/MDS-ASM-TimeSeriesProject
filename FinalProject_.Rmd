@@ -157,11 +157,11 @@ coeftest(m1)
 coeftest(m2)
 ```
 
-Three candidate models were estimated: 
+Two candidate models were estimated: 
   - ARIMA(1,1,0), 
   - ARIMA(0,1,1).
 
-In the ARIMA(1,1,0) model, the autoregressive parameter is significant, but the model exhibits a higher AIC than the alternatives.
+In the ARIMA(1,1,0) model, the autoregressive parameter is significant, but the model exhibits a higher AIC than the alternative.
 
 The ARIMA(0,1,1) model presents a highly significant moving-average coefficient and achieves the lowest AIC among the considered models. 
 
@@ -294,6 +294,7 @@ pred=predict(m2,n.ahead=12)
 pr<-ts(c(tail(lnserie,1),pred$pred),start=ultim+c(1,0),freq=12)
 se<-ts(c(0,pred$se),start=ultim+c(1,0),freq=12)
 
+#Intervals
 tl1<-ts(exp(pr-1.96*se),start=ultim+c(1,0),freq=12)
 tu1<-ts(exp(pr+1.96*se),start=ultim+c(1,0),freq=12)
 pr1<-ts(exp(pr),start=ultim+c(1,0),freq=12)
@@ -302,3 +303,9 @@ ts.plot(serie,tl1,tu1,pr1,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(ultim[1]-2,ultim[
 abline(v=(ultim[1]-2):(ultim[1]+3),lty=3,col=4)
 ```
 
+```{r}
+(previs1=window(cbind(tl1,pr1,tu1),start=ultim+c(1,0)))
+```
+After the last observation, the ARIMA(0,1,1) forecast is essentially flat, staying close to the most recent level (≈ 1.10–1.12).
+The bounds fan out as you go further into the future. This means forecast uncertainty increases with horizon. By the end of the 12-month horizon, the interval is quite wide (roughly ~0.9 to ~1.35 on the plot), so while the central prediction is stable, the model allows for meaningful upside or downside movement.
+Since we don't have seasonality, short-term forecasts (next 1–3 months) are relatively tight and more informative; the further out you go, the interval becomes wide enough that the forecast is more “range guidance” than a precise point estimate.
